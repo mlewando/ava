@@ -176,13 +176,14 @@ test('findFiles - filter extensions by default', t => {
 	process.chdir(fixtureDir);
 
 	const expected = [
-		'someFile.js'
+		'someFile.test.js'
 	].sort().map(file => path.join(fixtureDir, file));
 
 	const avaFiles = new AvaFiles();
 
-	avaFiles.findTestHelpers().then(files => {
+	avaFiles.findTestFiles().then(files => {
 		t.deepEqual(files.sort(), expected);
 		t.end();
 	});
 });
+
