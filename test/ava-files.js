@@ -187,3 +187,19 @@ test('findFiles - filter extensions by default', t => {
 	});
 });
 
+test('findFiles - honors extensions', t => {
+	const fixtureDir = fixture('extensions');
+	process.chdir(fixtureDir);
+
+	const expected = [
+		'someFile.test.js',
+		'otherFile.test.jsx'
+	].sort().map(file => path.join(fixtureDir, file));
+
+	const avaFiles = new AvaFiles({extensions: ['.js', '.jsx']});
+
+	avaFiles.findTestFiles().then(files => {
+		t.deepEqual(files.sort(), expected);
+		t.end();
+	});
+});
