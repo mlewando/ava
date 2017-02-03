@@ -1,26 +1,29 @@
 'use strict';
-var figures = require('figures');
-var chalk = require('chalk');
-var sinon = require('sinon');
-var test = require('tap').test;
-var lolex = require('lolex');
-var repeating = require('repeating');
-var beautifyStack = require('../../lib/beautify-stack');
-var colors = require('../../lib/colors');
-var verboseReporter = require('../../lib/reporters/verbose');
-var compareLineOutput = require('../helper/compare-line-output');
+const path = require('path');
+const indentString = require('indent-string');
+const flatten = require('arr-flatten');
+const tempWrite = require('temp-write');
+const figures = require('figures');
+const chalk = require('chalk');
+const sinon = require('sinon');
+const test = require('tap').test;
+const lolex = require('lolex');
+const beautifyStack = require('../../lib/beautify-stack');
+const colors = require('../../lib/colors');
+const VerboseReporter = require('../../lib/reporters/verbose');
+const compareLineOutput = require('../helper/compare-line-output');
+const formatAssertError = require('../../lib/format-assert-error');
+const codeExcerpt = require('../../lib/code-excerpt');
 
 chalk.enabled = true;
 
-// Tap doesn't emulate a tty environment and thus process.stdout.columns is
-// undefined. Expect an 80 character wide line to be rendered.
-var fullWidthLine = chalk.gray.dim(repeating('\u2500', 80));
+const stackLineRegex = /.+ \(.+:[0-9]+:[0-9]+\)/;
 
 lolex.install(new Date(2014, 11, 19, 17, 19, 12, 200).getTime(), ['Date']);
-var time = ' ' + chalk.grey.dim('[17:19:12]');
+const time = ' ' + chalk.grey.dim('[17:19:12]');
 
-function createReporter() {
-	var reporter = verboseReporter();
+function createReporter(options) {
+	const reporter = new VerboseReporter(options);
 	return reporter;
 }
 
@@ -31,11 +34,19 @@ function createRunStatus() {
 	};
 }
 
-test('beautify stack - removes uninteresting lines', function (t) {
+function fooFunc() {
+	barFunc();
+}
+
+function barFunc() {
+	throw new Error();
+}
+
+test('beautify stack - removes uninteresting lines', t => {
 	try {
 		fooFunc();
 	} catch (err) {
-		var stack = beautifyStack(err.stack);
+		const stack = beautifyStack(err.stack);
 		t.match(stack, /fooFunc/);
 		t.match(stack, /barFunc/);
 		t.match(err.stack, /Module._compile/);
@@ -44,45 +55,45 @@ test('beautify stack - removes uninteresting lines', function (t) {
 	}
 });
 
-test('start', function (t) {
-	var reporter = createReporter();
+test('start', t => {
+	const reporter = createReporter();
 
 	t.is(reporter.start(createRunStatus()), '');
 	t.end();
 });
 
-test('passing test and duration less than threshold', function (t) {
-	var reporter = createReporter();
+test('passing test and duration less than threshold', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'passed',
 		duration: 90
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.green(figures.tick) + ' passed';
+	const expectedOutput = '  ' + chalk.green(figures.tick) + ' passed';
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('passing test and duration greater than threshold', function (t) {
-	var reporter = createReporter();
+test('passing test and duration greater than threshold', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'passed',
 		duration: 150
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.green(figures.tick) + ' passed' + chalk.grey.dim(' (150ms)');
+	const expectedOutput = '  ' + chalk.green(figures.tick) + ' passed' + chalk.grey.dim(' (150ms)');
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('don\'t display test title if there is only one anonymous test', function (t) {
-	var reporter = createReporter();
+test('don\'t display test title if there is only one anonymous test', t => {
+	const reporter = createReporter();
 
-	var output = reporter.test({
+	const output = reporter.test({
 		title: '[anonymous]'
 	}, createRunStatus());
 
@@ -90,71 +101,71 @@ test('don\'t display test title if there is only one anonymous test', function (
 	t.end();
 });
 
-test('known failure test', function (t) {
-	var reporter = createReporter();
+test('known failure test', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'known failure',
 		failing: true
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.red(figures.tick) + ' ' + chalk.red('known failure');
+	const expectedOutput = '  ' + chalk.red(figures.tick) + ' ' + chalk.red('known failure');
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('failing test', function (t) {
-	var reporter = createReporter();
+test('failing test', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'failed',
 		error: {
 			message: 'assertion failed'
 		}
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.red(figures.cross) + ' failed ' + chalk.red('assertion failed');
+	const expectedOutput = '  ' + chalk.red(figures.cross) + ' failed ' + chalk.red('assertion failed');
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('skipped test', function (t) {
-	var reporter = createReporter();
+test('skipped test', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'skipped',
 		skip: true
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.yellow('- skipped');
+	const expectedOutput = '  ' + chalk.yellow('- skipped');
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('todo test', function (t) {
-	var reporter = createReporter();
+test('todo test', t => {
+	const reporter = createReporter();
 
-	var actualOutput = reporter.test({
+	const actualOutput = reporter.test({
 		title: 'todo',
 		skip: true,
 		todo: true
 	}, createRunStatus());
 
-	var expectedOutput = '  ' + chalk.blue('- todo');
+	const expectedOutput = '  ' + chalk.blue('- todo');
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
 });
 
-test('uncaught exception', function (t) {
-	var reporter = createReporter();
+test('uncaught exception', t => {
+	const reporter = createReporter();
 
-	var error = new Error('Unexpected token');
+	const error = new Error('Unexpected token');
 
-	var output = reporter.unhandledError({
+	const output = reporter.unhandledError({
 		type: 'exception',
 		file: 'test.js',
 		stack: beautifyStack(error.stack)
@@ -166,10 +177,10 @@ test('uncaught exception', function (t) {
 	t.end();
 });
 
-test('ava error', function (t) {
-	var reporter = createReporter();
+test('ava error', t => {
+	const reporter = createReporter();
 
-	var output = reporter.unhandledError({
+	const output = reporter.unhandledError({
 		type: 'exception',
 		file: 'test.js',
 		name: 'AvaError',
@@ -180,12 +191,12 @@ test('ava error', function (t) {
 	t.end();
 });
 
-test('unhandled rejection', function (t) {
-	var reporter = createReporter();
+test('unhandled rejection', t => {
+	const reporter = createReporter();
 
-	var error = new Error('Unexpected token');
+	const error = new Error('Unexpected token');
 
-	var output = reporter.unhandledError({
+	const output = reporter.unhandledError({
 		type: 'rejection',
 		file: 'test.js',
 		stack: beautifyStack(error.stack)
@@ -197,29 +208,29 @@ test('unhandled rejection', function (t) {
 	t.end();
 });
 
-test('unhandled error without stack', function (t) {
-	var reporter = createReporter();
+test('unhandled error without stack', t => {
+	const reporter = createReporter();
 
-	var err = {
+	const err = {
 		type: 'exception',
 		file: 'test.js',
 		message: 'test'
 	};
 
-	var output = reporter.unhandledError(err, createRunStatus()).split('\n');
+	const output = reporter.unhandledError(err, createRunStatus()).split('\n');
 
 	t.is(output[0], chalk.red('Uncaught Exception: test.js'));
 	t.is(output[1], '  ' + chalk.red(JSON.stringify(err)));
 	t.end();
 });
 
-test('results with passing tests', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with passing tests', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		''
@@ -229,9 +240,9 @@ test('results with passing tests', function (t) {
 	t.end();
 });
 
-test('results with passing known failure tests', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with passing known failure tests', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.knownFailureCount = 1;
 	runStatus.knownFailures = [{
@@ -239,14 +250,14 @@ test('results with passing known failure tests', function (t) {
 		failing: true
 	}];
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.red('1 known failure'),
 		'',
 		'',
-		'  ' + chalk.red('1. known failure'),
+		'  ' + chalk.red('known failure'),
 		''
 	].join('\n');
 
@@ -254,14 +265,14 @@ test('results with passing known failure tests', function (t) {
 	t.end();
 });
 
-test('results with skipped tests', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with skipped tests', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.skipCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.yellow('1 test skipped'),
@@ -272,14 +283,14 @@ test('results with skipped tests', function (t) {
 	t.end();
 });
 
-test('results with todo tests', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with todo tests', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.todoCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.blue('1 test todo'),
@@ -290,14 +301,14 @@ test('results with todo tests', function (t) {
 	t.end();
 });
 
-test('results with passing tests and rejections', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with passing tests and rejections', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.rejectionCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.red('1 unhandled rejection'),
@@ -308,14 +319,14 @@ test('results with passing tests and rejections', function (t) {
 	t.end();
 });
 
-test('results with passing tests and exceptions', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with passing tests and exceptions', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.exceptionCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.red('1 uncaught exception'),
@@ -326,15 +337,15 @@ test('results with passing tests and exceptions', function (t) {
 	t.end();
 });
 
-test('results with passing tests, rejections and exceptions', function (t) {
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+test('results with passing tests, rejections and exceptions', t => {
+	const reporter = createReporter();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.exceptionCount = 1;
 	runStatus.rejectionCount = 1;
 
-	var actualOutput = reporter.finish(runStatus);
-	var expectedOutput = [
+	const actualOutput = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'  ' + chalk.red('1 unhandled rejection'),
@@ -346,14 +357,29 @@ test('results with passing tests, rejections and exceptions', function (t) {
 	t.end();
 });
 
-test('results with errors', function (t) {
-	var error1 = new Error('error one message');
+test('results with errors', t => {
+	const error1 = new Error('error one message');
 	error1.stack = beautifyStack(error1.stack);
-	var error2 = new Error('error two message');
-	error2.stack = 'stack line with trailing whitespace\t\n';
+	const err1Path = tempWrite.sync('a()');
+	error1.source = {file: path.basename(err1Path), line: 1};
+	error1.showOutput = true;
+	error1.actual = JSON.stringify('abc');
+	error1.actualType = 'string';
+	error1.expected = JSON.stringify('abd');
+	error1.expectedType = 'string';
 
-	var reporter = createReporter();
-	var runStatus = createRunStatus();
+	const error2 = new Error('error two message');
+	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
+	const err2Path = tempWrite.sync('b()');
+	error2.source = {file: path.basename(err2Path), line: 1};
+	error2.showOutput = true;
+	error2.actual = JSON.stringify([1]);
+	error2.actualType = 'array';
+	error2.expected = JSON.stringify([2]);
+	error2.expectedType = 'array';
+
+	const reporter = createReporter({basePath: path.dirname(err1Path)});
+	const runStatus = createRunStatus();
 	runStatus.failCount = 1;
 	runStatus.tests = [{
 		title: 'fail one',
@@ -363,27 +389,221 @@ test('results with errors', function (t) {
 		error: error2
 	}];
 
-	var output = reporter.finish(runStatus);
-	compareLineOutput(t, output, [
+	const output = reporter.finish(runStatus);
+	compareLineOutput(t, output, flatten([
 		'',
 		'  ' + chalk.red('1 test failed') + time,
 		'',
+		'  ' + chalk.bold.white('fail one'),
+		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
 		'',
-		'  ' + chalk.red('1. fail one'),
-		/Error: error one message/,
-		/test\/reporters\/verbose\.js/,
+		indentString(codeExcerpt(err1Path, error1.source.line), 2).split('\n'),
+		'',
+		indentString(formatAssertError(error1), 2).split('\n'),
+		/error one message/,
+		'',
+		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
 		'',
-		'  ' + chalk.red('2. fail two'),
-		'  ' + colors.stack('stack line with trailing whitespace')
-	]);
+		'',
+		'  ' + chalk.bold.white('fail two'),
+		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
+		'',
+		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		'',
+		indentString(formatAssertError(error2), 2).split('\n'),
+		/error two message/,
+		'',
+		stackLineRegex
+	]));
 	t.end();
 });
 
-test('results when fail-fast is enabled', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results with errors and disabled code excerpts', t => {
+	const error1 = new Error('error one message');
+	error1.stack = beautifyStack(error1.stack);
+	error1.showOutput = true;
+	error1.actual = JSON.stringify('abc');
+	error1.actualType = 'string';
+	error1.expected = JSON.stringify('abd');
+	error1.expectedType = 'string';
+
+	const error2 = new Error('error two message');
+	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
+	const err2Path = tempWrite.sync('b()');
+	error2.source = {file: path.basename(err2Path), line: 1};
+	error2.showOutput = true;
+	error2.actual = JSON.stringify([1]);
+	error2.actualType = 'array';
+	error2.expected = JSON.stringify([2]);
+	error2.expectedType = 'array';
+
+	const reporter = createReporter({basePath: path.dirname(err2Path)});
+	const runStatus = createRunStatus();
+	runStatus.failCount = 1;
+	runStatus.tests = [{
+		title: 'fail one',
+		error: error1
+	}, {
+		title: 'fail two',
+		error: error2
+	}];
+
+	const output = reporter.finish(runStatus);
+	compareLineOutput(t, output, flatten([
+		'',
+		'  ' + chalk.red('1 test failed') + time,
+		'',
+		'  ' + chalk.bold.white('fail one'),
+		'',
+		indentString(formatAssertError(error1), 2).split('\n'),
+		/error one message/,
+		'',
+		stackLineRegex,
+		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
+		'',
+		'',
+		'',
+		'  ' + chalk.bold.white('fail two'),
+		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
+		'',
+		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		'',
+		indentString(formatAssertError(error2), 2).split('\n'),
+		/error two message/,
+		'',
+		stackLineRegex
+	]));
+	t.end();
+});
+
+test('results with errors and disabled code excerpts', t => {
+	const error1 = new Error('error one message');
+	error1.stack = beautifyStack(error1.stack);
+	const err1Path = tempWrite.sync('a();');
+	error1.source = {file: path.basename(err1Path), line: 10};
+	error1.showOutput = true;
+	error1.actual = JSON.stringify('abc');
+	error1.actualType = 'string';
+	error1.expected = JSON.stringify('abd');
+	error1.expectedType = 'string';
+
+	const error2 = new Error('error two message');
+	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
+	const err2Path = tempWrite.sync('b()');
+	error2.source = {file: path.basename(err2Path), line: 1};
+	error2.showOutput = true;
+	error2.actual = JSON.stringify([1]);
+	error2.actualType = 'array';
+	error2.expected = JSON.stringify([2]);
+	error2.expectedType = 'array';
+
+	const reporter = createReporter({basePath: path.dirname(err2Path)});
+	const runStatus = createRunStatus();
+	runStatus.failCount = 1;
+	runStatus.tests = [{
+		title: 'fail one',
+		error: error1
+	}, {
+		title: 'fail two',
+		error: error2
+	}];
+
+	const output = reporter.finish(runStatus);
+	compareLineOutput(t, output, flatten([
+		'',
+		'  ' + chalk.red('1 test failed') + time,
+		'',
+		'  ' + chalk.bold.white('fail one'),
+		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
+		'',
+		indentString(formatAssertError(error1), 2).split('\n'),
+		/error one message/,
+		'',
+		stackLineRegex,
+		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
+		'',
+		'',
+		'',
+		'  ' + chalk.bold.white('fail two'),
+		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
+		'',
+		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		'',
+		indentString(formatAssertError(error2), 2).split('\n'),
+		/error two message/,
+		'',
+		stackLineRegex
+	]));
+	t.end();
+});
+
+test('results with errors and disabled assert output', t => {
+	const error1 = new Error('error one message');
+	error1.stack = beautifyStack(error1.stack);
+	const err1Path = tempWrite.sync('a();');
+	error1.source = {file: path.basename(err1Path), line: 1};
+	error1.showOutput = false;
+	error1.actual = JSON.stringify('abc');
+	error1.actualType = 'string';
+	error1.expected = JSON.stringify('abd');
+	error1.expectedType = 'string';
+
+	const error2 = new Error('error two message');
+	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
+	const err2Path = tempWrite.sync('b();');
+	error2.source = {file: path.basename(err2Path), line: 1};
+	error2.showOutput = true;
+	error2.actual = JSON.stringify([1]);
+	error2.actualType = 'array';
+	error2.expected = JSON.stringify([2]);
+	error2.expectedType = 'array';
+
+	const reporter = createReporter({basePath: path.dirname(err1Path)});
+	const runStatus = createRunStatus();
+	runStatus.failCount = 1;
+	runStatus.tests = [{
+		title: 'fail one',
+		error: error1
+	}, {
+		title: 'fail two',
+		error: error2
+	}];
+
+	const output = reporter.finish(runStatus);
+	compareLineOutput(t, output, flatten([
+		'',
+		'  ' + chalk.red('1 test failed') + time,
+		'',
+		'  ' + chalk.bold.white('fail one'),
+		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
+		'',
+		indentString(codeExcerpt(err1Path, error1.source.line), 2).split('\n'),
+		'',
+		/error one message/,
+		'',
+		stackLineRegex,
+		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
+		'',
+		'',
+		'',
+		'  ' + chalk.bold.white('fail two'),
+		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
+		'',
+		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		'',
+		indentString(formatAssertError(error2), 2).split('\n'),
+		/error two message/,
+		'',
+		stackLineRegex
+	]));
+	t.end();
+});
+
+test('results when fail-fast is enabled', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.remainingCount = 1;
 	runStatus.failCount = 1;
 	runStatus.failFastEnabled = true;
@@ -391,8 +611,8 @@ test('results when fail-fast is enabled', function (t) {
 		title: 'failed test'
 	}];
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.red('1 test failed') + time,
 		'',
@@ -405,16 +625,16 @@ test('results when fail-fast is enabled', function (t) {
 	t.end();
 });
 
-test('results without fail-fast if no failing tests', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results without fail-fast if no failing tests', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.remainingCount = 1;
 	runStatus.failCount = 0;
 	runStatus.passCount = 1;
 	runStatus.failFastEnabled = true;
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		''
@@ -424,9 +644,9 @@ test('results without fail-fast if no failing tests', function (t) {
 	t.end();
 });
 
-test('results without fail-fast if no skipped tests', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results without fail-fast if no skipped tests', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.remainingCount = 0;
 	runStatus.failCount = 1;
 	runStatus.failFastEnabled = true;
@@ -434,8 +654,8 @@ test('results without fail-fast if no skipped tests', function (t) {
 		title: 'failed test'
 	}];
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.red('1 test failed') + time,
 		''
@@ -445,15 +665,15 @@ test('results without fail-fast if no skipped tests', function (t) {
 	t.end();
 });
 
-test('results with 1 previous failure', function (t) {
-	var reporter = createReporter();
+test('results with 1 previous failure', t => {
+	const reporter = createReporter();
 
-	var runStatus = createRunStatus();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.exceptionCount = 1;
 	runStatus.previousFailCount = 1;
 
-	var output = reporter.finish(runStatus);
+	const output = reporter.finish(runStatus);
 	compareLineOutput(t, output, [
 		'',
 		'  ' + colors.pass('1 test passed') + time,
@@ -463,15 +683,15 @@ test('results with 1 previous failure', function (t) {
 	t.end();
 });
 
-test('results with 2 previous failures', function (t) {
-	var reporter = createReporter();
+test('results with 2 previous failures', t => {
+	const reporter = createReporter();
 
-	var runStatus = createRunStatus();
+	const runStatus = createRunStatus();
 	runStatus.passCount = 1;
 	runStatus.exceptionCount = 1;
 	runStatus.previousFailCount = 2;
 
-	var output = reporter.finish(runStatus);
+	const output = reporter.finish(runStatus);
 	compareLineOutput(t, output, [
 		'',
 		'  ' + colors.pass('1 test passed') + time,
@@ -481,26 +701,30 @@ test('results with 2 previous failures', function (t) {
 	t.end();
 });
 
-test('full-width line when sectioning', function (t) {
-	var reporter = createReporter();
+test('full-width line when sectioning', t => {
+	const reporter = createReporter();
 
-	var output = reporter.section();
-	t.is(output, fullWidthLine);
+	const prevColumns = process.stdout.columns;
+	process.stdout.columns = 80;
+	const output = reporter.section();
+	process.stdout.columns = prevColumns;
+
+	t.is(output, chalk.gray.dim('\u2500'.repeat(80)));
 	t.end();
 });
 
-test('write calls console.error', function (t) {
-	var stub = sinon.stub(console, 'error');
-	var reporter = verboseReporter();
+test('write calls console.error', t => {
+	const stub = sinon.stub(console, 'error');
+	const reporter = new VerboseReporter();
 	reporter.write('result');
 	t.true(stub.called);
 	console.error.restore();
 	t.end();
 });
 
-test('reporter.stdout and reporter.stderr both use process.stderr.write', function (t) {
-	var reporter = verboseReporter();
-	var stub = sinon.stub(process.stderr, 'write');
+test('reporter.stdout and reporter.stderr both use process.stderr.write', t => {
+	const reporter = new VerboseReporter();
+	const stub = sinon.stub(process.stderr, 'write');
 	reporter.stdout('result');
 	reporter.stderr('result');
 	t.is(stub.callCount, 2);
@@ -508,14 +732,14 @@ test('reporter.stdout and reporter.stderr both use process.stderr.write', functi
 	t.end();
 });
 
-test('results when hasExclusive is enabled, but there are no known remaining tests', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results when hasExclusive is enabled, but there are no known remaining tests', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.passCount = 1;
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		''
@@ -525,17 +749,17 @@ test('results when hasExclusive is enabled, but there are no known remaining tes
 	t.end();
 });
 
-test('results when hasExclusive is enabled, but there is one remaining tests', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results when hasExclusive is enabled, but there is one remaining tests', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.testCount = 2;
 	runStatus.passCount = 1;
 	runStatus.failCount = 0;
 	runStatus.remainingCount = 1;
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'',
@@ -548,17 +772,17 @@ test('results when hasExclusive is enabled, but there is one remaining tests', f
 	t.end();
 });
 
-test('results when hasExclusive is enabled, but there are multiple remaining tests', function (t) {
-	var reporter = verboseReporter();
-	var runStatus = createRunStatus();
+test('results when hasExclusive is enabled, but there are multiple remaining tests', t => {
+	const reporter = new VerboseReporter();
+	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.testCount = 3;
 	runStatus.passCount = 1;
 	runStatus.failCount = 0;
 	runStatus.remainingCount = 2;
 
-	var output = reporter.finish(runStatus);
-	var expectedOutput = [
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
 		'',
 		'  ' + chalk.green('1 test passed') + time,
 		'',
@@ -570,11 +794,3 @@ test('results when hasExclusive is enabled, but there are multiple remaining tes
 	t.is(output, expectedOutput);
 	t.end();
 });
-
-function fooFunc() {
-	barFunc();
-}
-
-function barFunc() {
-	throw new Error();
-}
