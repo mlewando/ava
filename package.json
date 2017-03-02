@@ -1,6 +1,6 @@
 {
   "name": "ava",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "Futuristic test runner 🚀",
   "license": "MIT",
   "repository": "avajs/ava",
@@ -43,7 +43,7 @@
     "node": ">=4"
   },
   "scripts": {
-    "test": "xo && flow check && nyc tap --no-cov --timeout=150 --jobs=4 test/*.js test/reporters/*.js",
+    "test": "xo && flow check test/flow-types && nyc tap --no-cov --timeout=150 --jobs=4 test/*.js test/reporters/*.js",
     "test-win": "tap --no-cov --reporter=classic --timeout=150 --jobs=4 test/*.js test/reporters/*.js",
     "visual": "node test/visual/run-visual-tests.js",
     "prepublish": "npm run make-ts",
@@ -89,7 +89,7 @@
   "dependencies": {
     "@ava/babel-preset-stage-4": "^1.0.0",
     "@ava/babel-preset-transform-test-files": "^2.0.0",
-    "@ava/pretty-format": "^1.0.0",
+    "@ava/pretty-format": "^1.1.0",
     "arr-flatten": "^1.0.1",
     "array-union": "^1.0.1",
     "array-uniq": "^1.0.2",
@@ -115,6 +115,7 @@
     "currently-unhandled": "^0.4.1",
     "debug": "^2.2.0",
     "diff": "^3.0.1",
+    "diff-match-patch": "^1.0.0",
     "dot-prop": "^4.1.0",
     "empower-core": "^0.6.1",
     "equal-length": "^1.0.0",
@@ -154,7 +155,7 @@
     "resolve-cwd": "^1.0.0",
     "slash": "^1.0.0",
     "source-map-support": "^0.4.0",
-    "stack-utils": "^0.4.0",
+    "stack-utils": "^1.0.0",
     "strip-ansi": "^3.0.1",
     "strip-bom-buf": "^1.0.0",
     "time-require": "^0.1.2",
@@ -183,7 +184,7 @@
     "sinon": "^1.17.2",
     "source-map-fixtures": "^2.1.0",
     "tap": "^10.0.0",
-    "temp-write": "^3.0.0",
+    "temp-write": "^3.1.0",
     "touch": "^1.0.0",
     "xo": "^0.17.0",
     "zen-observable": "^0.4.0"
@@ -197,6 +198,7 @@
   },
   "nyc": {
     "reporter": [
+      "html",
       "lcov",
       "text"
     ]
